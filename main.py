@@ -149,7 +149,7 @@ def show_departure_board():
         # Create blank image
         image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
         draw = ImageDraw.Draw(image)
-        lowest_pixel = 1
+        lowestPixel = 1
 
         if current_time % 10 == 0:
             station_name1, platform1, station_name2, platform2 = getSettings()
@@ -161,8 +161,8 @@ def show_departure_board():
             print("got new train times")
 
         # Draw station and platform
-        draw.text((1, lowest_pixel), f"{station_name1}: {platform1}", font=smallFont, fill=stationColour)
-        lowest_pixel += smallFontHeight
+        draw.text((1, lowestPixel), f"{station_name1}: {platform1}", font=smallFont, fill=stationColour)
+        lowestPixel += smallFontHeight
 
         # Draw train departures
         for i, train in enumerate(trains1):
