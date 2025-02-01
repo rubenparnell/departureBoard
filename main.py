@@ -18,8 +18,8 @@ SETTINGS_FILE = "settings.json"
 default_settings = {
     "station1": "TYN",
     "platform1": "1",
-    "station1": "TYN",
-    "platform1": "2"
+    "station2": "TYN",
+    "platform2": "2"
 }
 
 # Ensure settings file exists
