@@ -86,6 +86,24 @@ def get_trains(station, platform):
     except:
         return []
 
+def getSettings():
+    settings = load_settings()
+    station_code1 = settings['station1']
+    platform1 = settings['platform1']
+    station_code2 = settings['station2']
+    platform2 = settings['platform2']
+
+    if station_code1 in stations and station_code2 in stations:
+        station_name1 = stations[station_code1]
+        station_name2 = stations[station_code2]
+    else:
+        station_name1 = "Unknown"
+        station_name2 = "Unknown"
+
+    print("got new settings")
+
+    return station_name1, platform1, station_name2, platform2
+
 # Flask routes
 @app.route('/')
 def departure_board():
@@ -122,27 +140,19 @@ def run_flask():
 def show_departure_board():
     current_time = int(time.time())
 
+    station_name1, platform1, station_name2, platform2 = getSettings()
+    trains1 = get_trains(station_name1, platform1)
+    trains2 = get_trains(station_name2, platform2)
+
     while True:
+        current_time = int(time.time())
         # Create blank image
         image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
         draw = ImageDraw.Draw(image)
         lowest_pixel = 1
 
         if current_time % 10 == 0:
-            settings = load_settings()
-            station_code1 = settings['station1']
-            platform1 = settings['platform1']
-            station_code2 = settings['station2']
-            platform2 = settings['platform2']
-
-            if station_code1 in stations and station_code2 in stations:
-                station_name1 = stations[station_code1]
-                station_name2 = stations[station_code2]
-            else:
-                station_name1 = "Unknown"
-                station_name2 = "Unknown"
-
-            print("got new settings")
+            station_name1, platform1, station_name2, platform2 = getSettings()
 
         if current_time % 30 == 0:
             trains1 = get_trains(station_name1, platform1)
