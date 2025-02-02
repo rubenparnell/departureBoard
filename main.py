@@ -48,6 +48,7 @@ options.brightness = 100
 options.pwm_lsb_nanoseconds = 130
 options.pwm_bits = 11
 options.gpio_slowdown = 2
+options.disable_hardware_pulsing = True
 
 matrix = RGBMatrix(options=options)
 font = ImageFont.truetype("./5x8.bdf", 8)
@@ -59,7 +60,7 @@ smallFontHeight = 6
 destinationColour = (246, 115, 25)
 stationColour = (6, 234, 49)
 
-# Wi-Fi check
+# Check if Pi is connected to Wi-Fi
 def check_wifi():
     try:
         subprocess.check_call(['ping', '-c', '1', '8.8.8.8'])
@@ -67,11 +68,32 @@ def check_wifi():
     except subprocess.CalledProcessError:
         return False
 
+# Create an access point for Wi-Fi setup
+def create_access_point():
+    subprocess.call(['sudo', 'systemctl', 'stop', 'dhcpcd.service'])
+    subprocess.call(['sudo', 'systemctl', 'disable', 'dhcpcd.service'])
+    
+    # Set up the access point using hostapd and dnsmasq
+    subprocess.call(['sudo', 'systemctl', 'start', 'hostapd.service'])
+    subprocess.call(['sudo', 'systemctl', 'start', 'dnsmasq.service'])
+
+# Stop the access point when Wi-Fi is connected
+def stop_access_point():
+    subprocess.call(['sudo', 'systemctl', 'stop', 'hostapd.service'])
+    subprocess.call(['sudo', 'systemctl', 'stop', 'dnsmasq.service'])
+    subprocess.call(['sudo', 'systemctl', 'start', 'dhcpcd.service'])
+
+# Set up Wi-Fi credentials
+def set_wifi_credentials(ssid, password):
+    with open('/etc/wpa_supplicant/wpa_supplicant.conf', 'a') as f:
+        f.write(f'\nnetwork={{\n\tssid="{ssid}"\n\tpsk="{password}"\n}}\n')
+    subprocess.call(['sudo', 'reboot'])
+
 # Display QR code for Wi-Fi setup
 def display_qr_code():
     wifi_setup_url = "http://departurepizero:5000/setup"
     qr = qrcode.make(wifi_setup_url)
-    img = qr.resize((matrix.width, matrix.height))
+    img = qr.resize((min(matrix.width, matrix.height),min(matrix.width, matrix.height)))
     matrix.SetImage(img.convert('RGB'))
     time.sleep(10)
 
@@ -115,9 +137,8 @@ def setup_wifi():
     if request.method == 'POST':
         ssid = request.form['ssid']
         password = request.form['password']
-        with open('/etc/wpa_supplicant/wpa_supplicant.conf', 'a') as f:
-            f.write(f'\nnetwork={{\n\tssid="{ssid}"\n\tpsk="{password}"\n}}\n')
-        subprocess.call(['sudo', 'reboot'])
+        set_wifi_credentials(ssid, password)
+        return redirect(url_for('departure_board'))
     return render_template('setup.html')
 
 @app.route('/settings', methods=['GET', 'POST'])
@@ -265,7 +286,8 @@ def main():
         threading.Thread(target=run_flask, daemon=True).start()
         show_departure_board()
     else:
-        print("No Wi-Fi detected. Showing QR code.")
+        print("No Wi-Fi detected. Creating Access Point.")
+        create_access_point()
         display_qr_code()
 
 if __name__ == '__main__':

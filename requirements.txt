@@ -11,6 +11,5 @@ MarkupSafe==3.0.2
 pillow==11.1.0
 qrcode==8.0
 requests==2.32.3
-rgbmatrix==0.0.1
 urllib3==2.3.0
 Werkzeug==3.1.3
