@@ -7,17 +7,36 @@
 </head>
 <body>
     <h1>Settings</h1>
-    <form method="POST">
-        <label for="station1">Station1:</label>
-        <input type="text" id="station1" name="station1" value="{{ station1 }}" required><br><br>
-        <label for="platform1">Platform1:</label>
-        <input type="number" id="platform1" name="platform1" value="{{ platform1 }}" required><br><br>
-        <label for="station2">Station2:</label>
-        <input type="text" id="station2" name="station2" value="{{ station2 }}" required><br><br>
-        <label for="platform2">Platform2:</label>
-        <input type="number" id="platform2" name="platform2" value="{{ platform2 }}" required><br><br>
-        <button type="submit">Save</button>
+    <form method="post">
+        <label for="station1">Select Station 1:</label>
+        <select name="station1" id="station1">
+            {% for code, name in stations.items() %}
+            <option value="{{ code }}" {% if station1_code == code %}selected{% endif %}>
+                {{ name }}
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="platform1">Platform 1:</label>
+        <input type="text" name="platform1" id="platform1" value="{{ platform1 }}" required>
+
+        <br>
+
+        <label for="station2">Select Station 2:</label>
+        <select name="station2" id="station2">
+            {% for code, name in stations.items() %}
+            <option value="{{ code }}" {% if station2_code == code %}selected{% endif %}>
+                {{ name }}
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="platform2">Platform 2:</label>
+        <input type="text" name="platform2" id="platform2" value="{{ platform2 }}" required>
+
+        <br>
+
+        <button type="submit">Save Settings</button>
     </form>
-    <a href="/">Back to Departure Board</a>
 </body>
 </html>
