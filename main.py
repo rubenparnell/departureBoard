@@ -186,7 +186,7 @@ def show_departure_board():
 
         # Draw train departures
         for i, train in enumerate(trains1):
-            destination = train[0]
+            destination = train['destination']
 
             if len(destination) > 15:
                 displayFont = smallFont
@@ -199,7 +199,7 @@ def show_departure_board():
 
             draw.text(text_position, destination, font=displayFont, fill=destinationColour)
             
-            due = str(train[1])
+            due = str(train['dueIn'])
             if due == "0":
                 due = "Due"
             elif due == "-1":
@@ -236,7 +236,7 @@ def show_departure_board():
         lowestPixel += smallFontHeight
 
         for i, train in enumerate(trains2):
-            destination = train[0]
+            destination = train['destination']
 
             if len(destination) > 15:
                 displayFont = smallFont
@@ -249,7 +249,7 @@ def show_departure_board():
 
             draw.text(text_position, destination, font=displayFont, fill=destinationColour)
 
-            due = str(train[1])
+            due = str(train['dueIn'])
             if due == "0":
                 due = "Due"
             elif due == "-1":
