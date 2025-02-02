@@ -168,11 +168,18 @@ def show_departure_board():
         lowestPixel = 1
 
         if current_time % 10 == 0:
-            settings = load_settings()
-            station_code1 = settings['station1']
-            platform1 = settings['platform1']
-            station_code2 = settings['station2']
-            platform2 = settings['platform2']
+            if settings != load_settings():
+                station_code1 = settings['station1']
+                platform1 = settings['platform1']
+                station_code2 = settings['station2']
+                platform2 = settings['platform2']
+
+                trains1 = get_trains(station_code1, platform1)
+                trains2 = get_trains(station_code2, platform2)
+
+                print("got new train times")
+
+            print("got settings")
 
         if current_time % 30 == 0:
             trains1 = get_trains(station_code1, platform1)
