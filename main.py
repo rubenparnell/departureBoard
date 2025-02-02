@@ -108,23 +108,13 @@ def get_trains(station, platform):
     except:
         return []
 
-def getSettings():
-    settings = load_settings()
-    station_code1 = settings['station1']
-    platform1 = settings['platform1']
-    station_code2 = settings['station2']
-    platform2 = settings['platform2']
-
-    if station_code1 in stations and station_code2 in stations:
-        station_name1 = stations[station_code1]
-        station_name2 = stations[station_code2]
+def convertStationCode(code):
+    if code in stations:
+        station_name = stations[code]
     else:
-        station_name1 = "Unknown"
-        station_name2 = "Unknown"
+        station_name = "Unknown"
 
-    print("got new settings")
-
-    return station_name1, platform1, station_name2, platform2
+    return station_name
 
 # Flask routes
 @app.route('/')
@@ -161,9 +151,14 @@ def run_flask():
 def show_departure_board():
     current_time = int(time.time())
 
-    station_name1, platform1, station_name2, platform2 = getSettings()
-    trains1 = get_trains(station_name1, platform1)
-    trains2 = get_trains(station_name2, platform2)
+    settings = load_settings()
+    station_code1 = settings['station1']
+    platform1 = settings['platform1']
+    station_code2 = settings['station2']
+    platform2 = settings['platform2']
+
+    trains1 = get_trains(station_code1, platform1)
+    trains2 = get_trains(station_code2, platform2)
 
     while True:
         current_time = int(time.time())
@@ -173,16 +168,20 @@ def show_departure_board():
         lowestPixel = 1
 
         if current_time % 10 == 0:
-            station_name1, platform1, station_name2, platform2 = getSettings()
+            settings = load_settings()
+            station_code1 = settings['station1']
+            platform1 = settings['platform1']
+            station_code2 = settings['station2']
+            platform2 = settings['platform2']
 
         if current_time % 30 == 0:
-            trains1 = get_trains(station_name1, platform1)
-            trains2 = get_trains(station_name2, platform2)
+            trains1 = get_trains(station_code1, platform1)
+            trains2 = get_trains(station_code2, platform2)
 
             print("got new train times")
 
         # Draw station and platform
-        draw.text((1, lowestPixel), f"{station_name1}: {platform1}", font=smallFont, fill=stationColour)
+        draw.text((1, lowestPixel), f"{convertStationCode(station_code1)}: {platform1}", font=smallFont, fill=stationColour)
         lowestPixel += smallFontHeight
 
         # Draw train departures
@@ -233,7 +232,7 @@ def show_departure_board():
 
 
         # Display 2nd info:
-        draw.text((1, lowestPixel), f"{station_name2}: {platform2}", font=smallFont, fill=stationColour)
+        draw.text((1, lowestPixel), f"{convertStationCode(station_code2)}: {platform2}", font=smallFont, fill=stationColour)
         lowestPixel += smallFontHeight
 
         for i, train in enumerate(trains2):
