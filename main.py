@@ -168,7 +168,9 @@ def show_departure_board():
         lowestPixel = 1
 
         if current_time % 10 == 0:
-            if settings != load_settings():
+            new_settings = load_settings()
+            if settings != new_settings:
+                settings = new_settings
                 station_code1 = settings['station1']
                 platform1 = settings['platform1']
                 station_code2 = settings['station2']
