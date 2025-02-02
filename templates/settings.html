@@ -8,7 +8,8 @@
 <body>
     <h1>Settings</h1>
     <form method="post">
-        <label for="station1">Select Station 1:</label>
+        <h2>Top:</h2>
+        <label for="station1">Station:</label>
         <select name="station1" id="station1">
             {% for code, name in stations.items() %}
             <option value="{{ code }}" {% if station1_code == code %}selected{% endif %}>
@@ -17,12 +18,12 @@
             {% endfor %}
         </select>
 
-        <label for="platform1">Platform 1:</label>
+        <label for="platform1">Platform:</label>
         <input type="text" name="platform1" id="platform1" value="{{ platform1 }}" required>
 
         <br>
-
-        <label for="station2">Select Station 2:</label>
+        <h2>Bottom:</h2>
+        <label for="station2">Station:</label>
         <select name="station2" id="station2">
             {% for code, name in stations.items() %}
             <option value="{{ code }}" {% if station2_code == code %}selected{% endif %}>
@@ -31,7 +32,7 @@
             {% endfor %}
         </select>
 
-        <label for="platform2">Platform 2:</label>
+        <label for="platform2">Platform:</label>
         <input type="text" name="platform2" id="platform2" value="{{ platform2 }}" required>
 
         <br>
