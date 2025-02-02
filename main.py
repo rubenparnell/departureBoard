@@ -5,6 +5,14 @@ import requests
 from flask import Flask, render_template, request
 from PIL import Image, ImageDraw, ImageFont
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
+from signal import pause
+from gpiozero import LED, Button
+
+# Setup button and LED
+button = Button(21)
+led = LED(26)
+
+led.on()
 
 # Initialize Flask
 app = Flask(__name__)
@@ -103,16 +111,34 @@ def settings():
 def run_flask():
     app.run(host='0.0.0.0', port=80)
 
+# Screen control flag
+screen_on = True
+
+def toggle_screen():
+    global screen_on
+    if screen_on:
+        print("Turning off screen")
+        matrix.Clear()  # Turn off the screen
+        led.off()  # Turn off LED
+    else:
+        print("Turning on screen")
+        led.on()  # Turn on LED
+    screen_on = not screen_on  # Toggle screen state
+    update_event.set()
+
+# Button setup to toggle screen on/off
+button.when_pressed = toggle_screen
+
 def show_departure_board():
     while True:
         settings = load_settings()
         station_code1, platform1 = settings['station1'], settings['platform1']
         station_code2, platform2 = settings['station2'], settings['platform2']
 
-        while not update_event.is_set():  # Loop until settings change
+        while screen_on:  # Only update display if the screen is on
             lowestPixel = 1
             trains1, trains2 = get_trains(station_code1, platform1), get_trains(station_code2, platform2)
-            print("fetched trains")
+            print("Fetched trains")
             
             image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
             draw = ImageDraw.Draw(image)
@@ -124,7 +150,6 @@ def show_departure_board():
             # Draw train departures
             for i, train in enumerate(trains1):
                 destination = train['destination']
-
                 if len(destination) > 15:
                     displayFont = smallFont
                     if i == 0:
@@ -133,7 +158,6 @@ def show_departure_board():
                     displayFont = font
 
                 text_position = (1, lowestPixel)
-
                 draw.text(text_position, destination, font=displayFont, fill=destinationColour)
                 
                 due = str(train['dueIn'])
@@ -173,7 +197,6 @@ def show_departure_board():
 
             for i, train in enumerate(trains2):
                 destination = train['destination']
-
                 if len(destination) > 15:
                     displayFont = smallFont
                     if i == 0:
@@ -182,7 +205,6 @@ def show_departure_board():
                     displayFont = font
 
                 text_position = (1, lowestPixel)
-
                 draw.text(text_position, destination, font=displayFont, fill=destinationColour)
 
                 due = str(train['dueIn'])
@@ -215,7 +237,6 @@ def show_departure_board():
             if update_event.wait(30):  # If update_event is set, break loop early
                 update_event.clear()
                 break  # Reload settings immediately
-
 
 # Main function
 def main():
