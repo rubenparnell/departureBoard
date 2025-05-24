@@ -51,6 +51,7 @@ settings = load_settings()
 
 # Save settings
 def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_hours):
+    global settings
     # Convert forecast_hours string to list of integers
     try:
         forecast_hours_list = [int(h.strip()) for h in forecast_hours.split(',') if h.strip().isdigit()]
@@ -67,6 +68,9 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
             "LON": float(lon),
             "FORECAST_HOURS": forecast_hours_list
         }, f)
+
+    settings = load_settings()
+
     update_event.set()  # Notify display thread of changes
 
 # LED Matrix setup
@@ -111,6 +115,8 @@ def convertStationCode(code):
 # Flask routes
 @app.route('/', methods=['GET', 'POST'])
 def settings_page():
+    global settings
+
     if request.method == 'POST':
         station1 = request.form['station1']
         platform1 = request.form['platform1']
@@ -265,6 +271,8 @@ def showMetro():
 
 weather_cache = {
     "timestamp": 0,
+    "LAT": "",
+    "LON": "",
     "data": None
 }
 
@@ -294,10 +302,13 @@ def get_icon(code, is_daytime, icon_size):
 
 def get_weather_forecast():
     global weather_cache
+    global settings
 
     now = time.time()
-    if weather_cache["data"] and now - weather_cache["timestamp"] < 600:
+    if weather_cache["data"] and now - weather_cache["timestamp"] < 600 and weather_cache["LON"] == settings["LON"] and weather_cache["LAT"] == settings["LAT"]:
         return weather_cache["data"]
+    
+    print("Fetching new weather data")
 
     today = datetime.now().date()
     start = today.strftime("%Y-%m-%dT00:00")
@@ -316,6 +327,8 @@ def get_weather_forecast():
         data = response.json()
         weather_cache["data"] = data
         weather_cache["timestamp"] = now
+        weather_cache["LON"] = settings["LON"]
+        weather_cache["LAT"] = settings["LAT"]
         return data
     except Exception as e:
         print("Weather fetch error:", e)
@@ -397,7 +410,6 @@ def showWeatherGraph():
     hours = data["hourly"]["time"]
     temps = data["hourly"]["temperature_2m"]
     precipitation_probs = data["hourly"]["precipitation_probability"]
-    codes = data["hourly"]["weathercode"]
 
     now = datetime.now()
     today = now.date()
@@ -418,7 +430,7 @@ def showWeatherGraph():
 
     # Define sizes
     side_panel_width = 18
-    graph_width = matrix.width - side_panel_width + 2
+    graph_width = matrix.width - side_panel_width
     height = matrix.height
 
     # Create image
