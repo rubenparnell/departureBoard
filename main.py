@@ -305,7 +305,7 @@ def get_weather_forecast():
 
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={settings["LAT"]}&longitude={settings["LON"]}"
+        f"latitude={settings['LAT']}&longitude={settings['LON']}"
         f"&hourly=temperature_2m,precipitation_probability,weathercode"
         f"&start={start}&end={end}"
         f"&timezone=Europe%2FLondon"
