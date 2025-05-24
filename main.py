@@ -110,7 +110,7 @@ def convertStationCode(code):
 
 # Flask routes
 @app.route('/', methods=['GET', 'POST'])
-def settings():
+def settings_page():
     if request.method == 'POST':
         station1 = request.form['station1']
         platform1 = request.form['platform1']
