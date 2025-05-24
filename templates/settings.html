@@ -1,43 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Settings</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
 </head>
 <body>
-    <h1>Settings</h1>
-    <form method="post">
-        <h2>Top:</h2>
-        <label for="station1">Station:</label>
-        <select name="station1" id="station1">
-            {% for code, name in stations.items() %}
-            <option value="{{ code }}" {% if station1_code == code %}selected{% endif %}>
-                {{ name }}
-            </option>
-            {% endfor %}
-        </select>
+<div class="container py-4">
+    <h1 class="mb-4">Metro Departure Board Settings</h1>
+    <form method="POST" class="row g-3">
+        <!-- Station 1 -->
+        <div class="col-md-6">
+            <label for="station1" class="form-label">Station 1</label>
+            <select class="form-select" name="station1" id="station1" required>
+                {% for code, name in stations.items() %}
+                    <option value="{{ code }}" {% if code == station1_code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label for="platform1" class="form-label">Platform 1</label>
+            <input type="text" class="form-control" name="platform1" id="platform1" value="{{ platform1 }}" required>
+        </div>
 
-        <label for="platform1">Platform:</label>
-        <input type="text" name="platform1" id="platform1" value="{{ platform1 }}" required>
+        <!-- Station 2 -->
+        <div class="col-md-6">
+            <label for="station2" class="form-label">Station 2</label>
+            <select class="form-select" name="station2" id="station2" required>
+                {% for code, name in stations.items() %}
+                    <option value="{{ code }}" {% if code == station2_code %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-6">
+            <label for="platform2" class="form-label">Platform 2</label>
+            <input type="text" class="form-control" name="platform2" id="platform2" value="{{ platform2 }}" required>
+        </div>
 
-        <br>
-        <h2>Bottom:</h2>
-        <label for="station2">Station:</label>
-        <select name="station2" id="station2">
-            {% for code, name in stations.items() %}
-            <option value="{{ code }}" {% if station2_code == code %}selected{% endif %}>
-                {{ name }}
-            </option>
-            {% endfor %}
-        </select>
+        <!-- Latitude -->
+        <div class="col-md-6">
+            <label for="lat" class="form-label">Latitude</label>
+            <input type="number" step="any" class="form-control" name="lat" id="lat" value="{{ lat }}" required>
+        </div>
 
-        <label for="platform2">Platform:</label>
-        <input type="text" name="platform2" id="platform2" value="{{ platform2 }}" required>
+        <!-- Longitude -->
+        <div class="col-md-6">
+            <label for="lon" class="form-label">Longitude</label>
+            <input type="number" step="any" class="form-control" name="lon" id="lon" value="{{ lon }}" required>
+        </div>
 
-        <br><br><br>
+        <!-- Forecast Hours -->
+        <div class="col-12">
+            <label for="forecast_hours" class="form-label">Forecast Hours (comma separated)</label>
+            <input type="text" class="form-control" name="forecast_hours" id="forecast_hours" value="{{ forecast_hours }}" placeholder="e.g. 9,12,15,18" required>
+        </div>
 
-        <button type="submit">Save Settings</button>
+        <!-- Submit button -->
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+        </div>
     </form>
+</div>
+
+<!-- Bootstrap JS Bundle with Popper (optional for some components) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
