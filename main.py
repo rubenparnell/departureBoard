@@ -98,6 +98,7 @@ secondaryColour = (6, 234, 49)
 
 rainColour = (33, 227, 253)
 tempColour = (252, 238, 70)
+uvColour = (253, 72, 34)
 
 # Fetch station names
 stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
@@ -317,7 +318,7 @@ def get_weather_forecast():
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={settings['LAT']}&longitude={settings['LON']}"
-        f"&hourly=temperature_2m,precipitation_probability,weathercode"
+        f"&hourly=temperature_2m,precipitation_probability,weathercode,uv_index,is_day"
         f"&start={start}&end={end}"
         f"&timezone=Europe%2FLondon"
     )
@@ -340,6 +341,8 @@ def extract_forecast_data(data):
     temps = data["hourly"]["temperature_2m"]
     precipitation_probs = data["hourly"]["precipitation_probability"]
     codes_data = data["hourly"]["weathercode"]
+    uv_index = data["hourly"]["uv_index"]
+    is_day_array = data["hourly"]["is_day"]
 
     now = datetime.now()
     result = {}
@@ -351,7 +354,8 @@ def extract_forecast_data(data):
                 "temp": temps[i],
                 "precipitation_probability": precipitation_probs[i],
                 "code": codes_data[i],
-                "is_day": 6 <= dt.hour <= 18
+                "uv_index": uv_index[i],
+                "is_day": bool(is_day_array[i])
             }
     return result
 
@@ -366,7 +370,6 @@ def showWeather():
 
     time_data = extract_forecast_data(data)
 
-    # Skip update if forecast hasn't changed
     if time_data == last_forecast_data:
         return last_rendered_image
 
@@ -387,14 +390,33 @@ def showWeather():
         precipitation_prob = forecast["precipitation_probability"]
         code = forecast["code"]
         is_day = forecast["is_day"]
+        uv_index = forecast["uv_index"]
 
-        draw.text((x + 1, y_start), f"{hour}:00", font=smallFont, fill=(255, 255, 255))
-        draw.text((x + 1, y_start + 10), f"{round(temp)}°", font=smallFont, fill=(255, 255, 255))
-        draw.text((x + 1, y_start + 18), f"{precipitation_prob}%", font=smallFont, fill=(255, 255, 255))
+        # Centre each text element horizontally
+        hour_text = f"{hour}:00"
+        temp_text = f"{round(temp)}°"
+        precip_text = f"{precipitation_prob}%"
+        uv_index_text = f"{uv_index}"
 
+        hour_x = x + (col_width - smallFont.getlength(hour_text)) // 2
+        temp_x = x + (col_width - smallFont.getlength(temp_text)) // 2
+        precip_x = x + (col_width - smallFont.getlength(precip_text)) // 2
+        uv_x = x + (col_width - smallFont.getlength(uv_index_text)) // 2
+
+        draw.text((hour_x, y_start), hour_text, font=smallFont, fill=primaryColour)
+        draw.text((temp_x, y_start + 8), temp_text, font=smallFont, fill=tempColour)
+        draw.text((precip_x, y_start + 15), precip_text, font=smallFont, fill=rainColour)
+        draw.text((uv_x, y_start + 22), uv_index_text, font=smallFont, fill=uvColour)
+
+        # Paste and centre the icon
         icon = get_icon(code, is_day, icon_size=(24, 24))
         if icon:
-            image.paste(icon, (x, y_start + 22), icon)
+            icon_x = x + (col_width - icon.width) // 2
+            image.paste(icon, (icon_x, y_start + 24), icon)
+
+        # Draw vertical column separator line (skip after last column)
+        if i < 3:
+            draw.line([(x + col_width - 1, 0), (x + col_width - 1, matrix.height)], fill=(50, 50, 50))
 
     last_rendered_image = image
     return image
@@ -410,6 +432,7 @@ def showWeatherGraph():
     hours = data["hourly"]["time"]
     temps = data["hourly"]["temperature_2m"]
     precipitation_probs = data["hourly"]["precipitation_probability"]
+    uv_index = data["hourly"]["uv_index"]
 
     now = datetime.now()
     today = now.date()
@@ -418,12 +441,14 @@ def showWeatherGraph():
     times = []
     today_temps = []
     today_precip = []
+    today_uv = []
     for i, t in enumerate(hours):
         dt = datetime.fromisoformat(t)
         if dt.date() == today:
             times.append(dt)
             today_temps.append(temps[i])
             today_precip.append(precipitation_probs[i])
+            today_uv.append(uv_index[i])
 
     if not times:
         return None
@@ -454,6 +479,9 @@ def showWeatherGraph():
 
     def scale_y_precip(prob):
         return int(height - (prob / 100 * height))
+    
+    def scale_y_uv(uv):
+        return int(height - (uv / 11 * height))
 
     # Draw temperature line
     for i in range(1, len(times)):
@@ -471,6 +499,15 @@ def showWeatherGraph():
         y2 = scale_y_precip(today_precip[i])
         draw.line((x1, y1, x2, y2), fill=rainColour, width=1)
 
+    # Draw UV line
+    for i in range(1, len(times)):
+        x1 = scale_x(times[i - 1].hour)
+        y1 = scale_y_uv(today_uv[i - 1])
+        x2 = scale_x(times[i].hour)
+        y2 = scale_y_uv(today_uv[i])
+        draw.line((x1, y1, x2, y2), fill=uvColour, width=1)
+
+
     # Draw current time marker
     current_x = scale_x(now.hour + now.minute / 60)
     draw.line((current_x, 0, current_x, height), fill=primaryColour, width=1)
@@ -485,20 +522,24 @@ def showWeatherGraph():
         if dt.hour == now.hour:
             current_temp = round(today_temps[i])
             current_precip = round(today_precip[i])
+            current_uv = round(today_uv[i], 1)
             break
     if current_temp is None:
         current_temp = round(today_temps[-1])
     if current_precip is None:
         current_precip = round(today_precip[-1])
+    if current_uv is None:
+        current_uv = round(today_uv[-1], 1)
 
     draw.line((panel_x-1, 0, panel_x-1, height), fill=secondaryColour, width=1)
 
     # Draw temperatures
     draw.text((panel_x + 1, 0), datetime.now().strftime("%H:%M"), font=smallFont, fill=primaryColour)
     draw.text((panel_x + 1, 7), f"{round(current_temp)}°", font=smallFont, fill=tempColour)
-    draw.text((panel_x + 1, 13), f"↑{round(max_temp)}°", font=smallFont, fill=(255, 0, 0))
-    draw.text((panel_x + 1, 19), f"↓{round(min_temp)}°", font=smallFont, fill=(0, 0, 255))
-    draw.text((panel_x + 1, 27), f"{round(current_precip)}%", font=smallFont, fill=rainColour)
+    draw.text((panel_x + 1, 14), f"↑{round(max_temp)}°", font=smallFont, fill=(255, 0, 0))
+    draw.text((panel_x + 1, 21), f"↓{round(min_temp)}°", font=smallFont, fill=(0, 0, 255))
+    draw.text((panel_x + 1, 28), f"{round(current_precip)}%", font=smallFont, fill=rainColour)
+    draw.text((panel_x + 1, 35), f"ƀ{current_uv}", font=smallFont, fill=uvColour) # ƀ is the uv symbol is the custom font
 
     return image
 
