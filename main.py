@@ -514,7 +514,6 @@ def showFilms(scroll_offset=0, page=0):
 
     if film_cache["date"] != today:
         film_data = get_jamjar_films()
-        
         film_cache["data"] = film_data
         film_cache["date"] = today
     else:
@@ -539,11 +538,12 @@ def showFilms(scroll_offset=0, page=0):
 
     y = 0
     for title, times in visible_films:
-        text_width = int(smallFont.getlength(title))
-        if text_width <= matrix.width:
+        # Handle title scrolling
+        title_width = int(smallFont.getlength(title))
+        if title_width <= matrix.width:
             draw.text((0, y), title, font=smallFont, fill=primaryColour)
         else:
-            max_scroll = text_width - matrix.width
+            max_scroll = title_width - matrix.width
             total_cycle = pause_frames + max_scroll + pause_frames
             scroll_pos = scroll_offset % total_cycle
 
@@ -556,11 +556,28 @@ def showFilms(scroll_offset=0, page=0):
                 draw.text((-max_scroll, y), title, font=smallFont, fill=primaryColour)
 
         y += 6
+
+        # Handle times scrolling
         times_str = ", ".join(times)
-        draw.text((0, y), times_str[:matrix.width // 4], font=smallFont, fill=secondaryColour)
+        times_width = int(smallFont.getlength(times_str))
+        if times_width <= matrix.width:
+            draw.text((0, y), times_str, font=smallFont, fill=secondaryColour)
+        else:
+            max_scroll = times_width - matrix.width
+            total_cycle = pause_frames + max_scroll + pause_frames
+            scroll_pos = scroll_offset % total_cycle
+
+            if scroll_pos < pause_frames:
+                draw.text((0, y), times_str, font=smallFont, fill=secondaryColour)
+            elif scroll_pos < pause_frames + max_scroll:
+                offset = scroll_pos - pause_frames
+                draw.text((-offset, y), times_str, font=smallFont, fill=secondaryColour)
+            else:
+                draw.text((-max_scroll, y), times_str, font=smallFont, fill=secondaryColour)
+
         y += 6
-        
-    draw.text((matrix.width-4*3, matrix.height-5), f"{page+1}/{total_pages}", font=smallFont, fill=rainColour)
+
+    draw.text((matrix.width - 4 * 3, matrix.height - 5), f"{page + 1}/{total_pages}", font=smallFont, fill=rainColour)
 
     return image
 
