@@ -2,7 +2,6 @@ import os
 import json
 import threading
 import requests
-from flask import Flask, render_template, request
 from PIL import Image, ImageDraw, ImageFont
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from signal import pause
@@ -10,8 +9,18 @@ from gpiozero import LED, Button
 from datetime import datetime
 import time
 from io import BytesIO
-
+import paho.mqtt.client as mqtt
+from dotenv import load_dotenv
 from get_films import get_jamjar_films
+
+load_dotenv()  # Load environment variables from .env file
+
+MQTT_BROKER = os.getenv("MQTT_BROKER")
+MQTT_PORT = int(os.getenv("MQTT_PORT"))
+BOARD_ID = os.getenv("BOARD_ID")
+MQTT_TOPIC = os.getenv("MQTT_TOPIC")
+MQTT_USERNAME = os.getenv("MQTT_USERNAME")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
 MODES = ["metro", "weather", "weather_graph", "films", "off"]
 current_mode = 0  # Start with "metro"
@@ -19,9 +28,6 @@ current_mode = 0  # Start with "metro"
 # Setup button and LED
 button = Button(21, bounce_time=0.2)  # 200 ms debounce time
 led = LED(26)
-
-# Initialize Flask
-app = Flask(__name__)
 
 SETTINGS_FILE = "settings.json"
 update_event = threading.Event()
@@ -32,9 +38,9 @@ default_settings = {
     "platform1": "1",
     "station2": "TYN",
     "platform2": "2",
-    "LAT": 0.0,
-    "LON": 0.0,
-    "FORECAST_HOURS": [9, 12, 15, 18]
+    "lat": 0.0,
+    "lon": 0.0,
+    "forecast_hours": [9, 12, 15, 18]
 }
 
 # Ensure settings file exists
@@ -47,6 +53,39 @@ def load_settings():
     with open(SETTINGS_FILE, "r") as f:
         return json.load(f)
 
+def on_connect(client, userdata, flags, rc):
+    print("Connected to MQTT broker with result code", rc)
+    client.subscribe(MQTT_TOPIC)
+
+def on_message(client, userdata, msg):
+    print(f"MQTT message received on topic {msg.topic}")
+    try:
+        payload = json.loads(msg.payload.decode())
+        save_settings(
+            station1=payload.get("station1", settings["station1"]),
+            platform1=payload.get("platform1", settings["platform1"]),
+            station2=payload.get("station2", settings["station2"]),
+            platform2=payload.get("platform2", settings["platform2"]),
+            lat=payload.get("lat", settings["lat"]),
+            lon=payload.get("lon", settings["lon"]),
+            forecast_hours=",".join(map(str, payload.get("forecast_hours", settings["forecast_hours"])))
+        )
+        print("Settings updated from MQTT")
+    except Exception as e:
+        print("Failed to apply MQTT settings:", e)
+
+def run_mqtt():
+    client = mqtt.Client(client_id=BOARD_ID)
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    client.on_connect = on_connect
+    client.on_message = on_message
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        print(f"connected to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
+        client.loop_forever()
+    except Exception as e:
+        print("MQTT connection error:", e)
+
 settings = load_settings()
 
 # Save settings
@@ -56,7 +95,9 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
     try:
         forecast_hours_list = [int(h.strip()) for h in forecast_hours.split(',') if h.strip().isdigit()]
     except Exception:
-        forecast_hours_list = default_settings["FORECAST_HOURS"]
+        forecast_hours_list = default_settings["forecast_hours"]
+
+    print(f"Saving settings: {station1}, {platform1}, {station2}, {platform2}, {lat}, {lon}, {forecast_hours_list}")
     
     with open(SETTINGS_FILE, "w") as f:
         json.dump({
@@ -64,9 +105,9 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
             "platform1": platform1,
             "station2": station2,
             "platform2": platform2,
-            "LAT": float(lat),
-            "LON": float(lon),
-            "FORECAST_HOURS": forecast_hours_list
+            "lat": float(lat),
+            "lon": float(lon),
+            "forecast_hours": forecast_hours_list
         }, f)
 
     settings = load_settings()
@@ -113,50 +154,6 @@ def get_trains(station, platform):
 def convertStationCode(code):
     return stations.get(code, "Unknown")
 
-# Flask routes
-@app.route('/', methods=['GET', 'POST'])
-def settings_page():
-    global settings
-
-    if request.method == 'POST':
-        station1 = request.form['station1']
-        platform1 = request.form['platform1']
-        station2 = request.form['station2']
-        platform2 = request.form['platform2']
-        lat = request.form.get('lat', 0)
-        lon = request.form.get('lon', 0)
-        forecast_hours = request.form.get('forecast_hours', "9,12,15,18")
-        save_settings(station1, platform1, station2, platform2, lat, lon, forecast_hours)
-
-    settings = load_settings()
-
-    # Convert station codes to names for pre-filled form values
-    station1_name = convertStationCode(settings["station1"])
-    station2_name = convertStationCode(settings["station2"])
-
-    # Convert forecast hours list to comma-separated string for form input
-    forecast_hours_str = ",".join(str(h) for h in settings.get("FORECAST_HOURS", []))
-
-    return render_template(
-        'settings.html',
-        stations=stations,  # Pass station list to the template
-        station1_code=settings["station1"],
-        station1_name=station1_name,
-        platform1=settings["platform1"],
-        station2_code=settings["station2"],
-        station2_name=station2_name,
-        platform2=settings["platform2"],
-        lat=settings.get("LAT", 0.0),
-        lon=settings.get("LON", 0.0),
-        forecast_hours=forecast_hours_str
-    )
-
-# Flask thread
-def run_flask():
-    app.run(host='0.0.0.0', port=80)
-
-# Screen control flag
-screen_on = True
 
 def cycle_mode():
     global current_mode
@@ -272,8 +269,8 @@ def showMetro():
 
 weather_cache = {
     "timestamp": 0,
-    "LAT": "",
-    "LON": "",
+    "lat": "",
+    "lon": "",
     "data": None
 }
 
@@ -306,7 +303,7 @@ def get_weather_forecast():
     global settings
 
     now = time.time()
-    if weather_cache["data"] and now - weather_cache["timestamp"] < 600 and weather_cache["LON"] == settings["LON"] and weather_cache["LAT"] == settings["LAT"]:
+    if weather_cache["data"] and now - weather_cache["timestamp"] < 600 and weather_cache["lon"] == settings["lon"] and weather_cache["lat"] == settings["lat"]:
         return weather_cache["data"]
     
     print("Fetching new weather data")
@@ -317,7 +314,7 @@ def get_weather_forecast():
 
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={settings['LAT']}&longitude={settings['LON']}"
+        f"latitude={settings['lat']}&longitude={settings['lon']}"
         f"&hourly=temperature_2m,precipitation_probability,weathercode,uv_index,is_day"
         f"&start={start}&end={end}"
         f"&timezone=Europe%2FLondon"
@@ -328,8 +325,8 @@ def get_weather_forecast():
         data = response.json()
         weather_cache["data"] = data
         weather_cache["timestamp"] = now
-        weather_cache["LON"] = settings["LON"]
-        weather_cache["LAT"] = settings["LAT"]
+        weather_cache["lon"] = settings["lon"]
+        weather_cache["lat"] = settings["lat"]
         return data
     except Exception as e:
         print("Weather fetch error:", e)
@@ -349,7 +346,7 @@ def extract_forecast_data(data):
 
     for i, t in enumerate(hours):
         dt = datetime.fromisoformat(t)
-        if dt.hour in settings["FORECAST_HOURS"] and dt.date() == now.date():
+        if dt.hour in settings["forecast_hours"] and dt.date() == now.date():
             result[dt.hour] = {
                 "temp": temps[i],
                 "precipitation_probability": precipitation_probs[i],
@@ -380,7 +377,7 @@ def showWeather():
     col_width = matrix.width // 4
     y_start = 1
 
-    for i, hour in enumerate(settings["FORECAST_HOURS"]):
+    for i, hour in enumerate(settings["forecast_hours"]):
         x = i * col_width
         if hour not in time_data:
             continue
@@ -684,7 +681,9 @@ def show_board():
 
 # Main function
 def main():
-    threading.Thread(target=run_flask, daemon=True).start()
+    # Start MQTT thread
+    threading.Thread(target=run_mqtt, daemon=True).start()
+
     show_board()
 
 if __name__ == '__main__':
