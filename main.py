@@ -59,20 +59,21 @@ def on_connect(client, userdata, flags, rc):
 
 def on_message(client, userdata, msg):
     print(f"MQTT message received on topic {msg.topic}")
-    try:
-        payload = json.loads(msg.payload.decode())
-        save_settings(
-            station1=payload.get("station1", settings["station1"]),
-            platform1=payload.get("platform1", settings["platform1"]),
-            station2=payload.get("station2", settings["station2"]),
-            platform2=payload.get("platform2", settings["platform2"]),
-            lat=payload.get("lat", settings["lat"]),
-            lon=payload.get("lon", settings["lon"]),
-            forecast_hours=",".join(map(str, payload.get("forecast_hours", settings["forecast_hours"])))
-        )
-        print("Settings updated from MQTT")
-    except Exception as e:
-        print("Failed to apply MQTT settings:", e)
+    if msg.topic == MQTT_TOPIC:
+        try:
+            payload = json.loads(msg.payload.decode())
+            save_settings(
+                station1=payload.get("station1", settings["station1"]),
+                platform1=payload.get("platform1", settings["platform1"]),
+                station2=payload.get("station2", settings["station2"]),
+                platform2=payload.get("platform2", settings["platform2"]),
+                lat=payload.get("lat", settings["lat"]),
+                lon=payload.get("lon", settings["lon"]),
+                forecast_hours=",".join(map(str, payload.get("forecast_hours", settings["forecast_hours"])))
+            )
+            print("Settings updated from MQTT")
+        except Exception as e:
+            print("Failed to apply MQTT settings:", e)
 
 def run_mqtt():
     client = mqtt.Client(client_id=BOARD_ID)
