@@ -560,6 +560,9 @@ def showFilms(scroll_offset=0, page=0):
     else:
         film_data = film_cache["data"]
 
+    image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
     if not film_data:
         # Draw "No films found" message centred
         text = "No films found"
@@ -568,9 +571,6 @@ def showFilms(scroll_offset=0, page=0):
         y = max((matrix.height - 6) // 2, 0)
         draw.text((x, y), text, font=smallFont, fill=primaryColour)
         return image
-
-    image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
-    draw = ImageDraw.Draw(image)
 
     pause_frames = 40  # ~2s at 20fps
     films_per_page = matrix.height // 6 // 2  # 2 lines per film, 6px per line
