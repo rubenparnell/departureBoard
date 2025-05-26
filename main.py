@@ -561,7 +561,13 @@ def showFilms(scroll_offset=0, page=0):
         film_data = film_cache["data"]
 
     if not film_data:
-        return None
+        # Draw "No films found" message centred
+        text = "No films found"
+        text_width = int(smallFont.getlength(text))
+        x = max((matrix.width - text_width) // 2, 0)
+        y = max((matrix.height - 6) // 2, 0)
+        draw.text((x, y), text, font=smallFont, fill=primaryColour)
+        return image
 
     image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
     draw = ImageDraw.Draw(image)
