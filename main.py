@@ -10,8 +10,14 @@ from datetime import datetime
 import time
 from io import BytesIO
 import paho.mqtt.client as mqtt
+import ssl
 from dotenv import load_dotenv
+import subprocess
+import qrcode
+from flask import Flask, render_template, request, redirect, url_for
 from get_films import get_jamjar_films
+
+# SETUP VARIABLES
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -48,6 +54,76 @@ if not os.path.exists(SETTINGS_FILE):
     with open(SETTINGS_FILE, "w") as f:
         json.dump(default_settings, f)
 
+# LED Matrix setup
+options = RGBMatrixOptions()
+options.rows = 48
+options.cols = 96
+options.chain_length = 1
+options.parallel = 1
+options.hardware_mapping = 'regular'
+options.brightness = 100
+options.pwm_lsb_nanoseconds = 130
+options.pwm_bits = 11
+options.gpio_slowdown = 2
+options.disable_hardware_pulsing = True
+
+matrix = RGBMatrix(options=options)
+font = ImageFont.truetype("./5x8.bdf", 8)
+font_size = 8
+
+smallFont = ImageFont.truetype("./4x6.bdf", 6)
+smallFontHeight = 6
+
+primaryColour = (246, 115, 25)
+secondaryColour = (6, 234, 49)
+
+rainColour = (33, 227, 253)
+tempColour = (252, 238, 70)
+uvColour = (253, 72, 34)
+
+# Fetch station names
+stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
+
+
+# FUNCTIONS:
+
+# Check if Pi is connected to Wi-Fi
+def check_wifi():
+    try:
+        subprocess.check_call(['ping', '-c', '1', '8.8.8.8'])
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+# Create an access point for Wi-Fi setup
+def create_access_point():
+    subprocess.call(['sudo', 'systemctl', 'stop', 'dhcpcd.service'])
+    subprocess.call(['sudo', 'systemctl', 'disable', 'dhcpcd.service'])
+    
+    # Set up the access point using hostapd and dnsmasq
+    subprocess.call(['sudo', 'systemctl', 'start', 'hostapd.service'])
+    subprocess.call(['sudo', 'systemctl', 'start', 'dnsmasq.service'])
+
+# Stop the access point when Wi-Fi is connected
+def stop_access_point():
+    subprocess.call(['sudo', 'systemctl', 'stop', 'hostapd.service'])
+    subprocess.call(['sudo', 'systemctl', 'stop', 'dnsmasq.service'])
+    subprocess.call(['sudo', 'systemctl', 'start', 'dhcpcd.service'])
+
+# Set up Wi-Fi credentials
+def set_wifi_credentials(ssid, password):
+    with open('/etc/wpa_supplicant/wpa_supplicant.conf', 'a') as f:
+        f.write(f'\nnetwork={{\n\tssid="{ssid}"\n\tpsk="{password}"\n}}\n')
+    subprocess.call(['sudo', 'reboot'])
+
+# Display QR code for Wi-Fi setup
+def display_qr_code():
+    wifi_setup_url = "http://localhost:5000"  # URL for the Flask app
+    qr = qrcode.make(wifi_setup_url)
+    img = qr.resize((min(matrix.width, matrix.height),min(matrix.width, matrix.height)))
+    matrix.SetImage(img.convert('RGB'))
+    time.sleep(10)
+
 # Load settings
 def load_settings():
     with open(SETTINGS_FILE, "r") as f:
@@ -80,6 +156,7 @@ def run_mqtt():
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
+    client.tls_set(tls_version=ssl.PROTOCOL_TLSv1_2)
     try:
         client.connect(MQTT_BROKER, MQTT_PORT, 60)
         print(f"connected to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}")
@@ -115,36 +192,6 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
 
     update_event.set()  # Notify display thread of changes
 
-# LED Matrix setup
-options = RGBMatrixOptions()
-options.rows = 48
-options.cols = 96
-options.chain_length = 1
-options.parallel = 1
-options.hardware_mapping = 'regular'
-options.brightness = 100
-options.pwm_lsb_nanoseconds = 130
-options.pwm_bits = 11
-options.gpio_slowdown = 2
-options.disable_hardware_pulsing = True
-
-matrix = RGBMatrix(options=options)
-font = ImageFont.truetype("./5x8.bdf", 8)
-font_size = 8
-
-smallFont = ImageFont.truetype("./4x6.bdf", 6)
-smallFontHeight = 6
-
-primaryColour = (246, 115, 25)
-secondaryColour = (6, 234, 49)
-
-rainColour = (33, 227, 253)
-tempColour = (252, 238, 70)
-uvColour = (253, 72, 34)
-
-# Fetch station names
-stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
-
 def get_trains(station, platform):
     try:
         response = requests.get(f"https://metro-rti.nexus.org.uk/api/times/{station}/{platform}")
@@ -164,8 +211,27 @@ def cycle_mode():
 
 # Button setup to toggle screen on/off
 button.when_pressed = cycle_mode
-    
 
+
+
+# FLASK WEB APP FOR WIFI SETUP:
+app = Flask(__name__)
+
+@app.route('/', methods=['GET', 'POST'])
+def setup_wifi():
+    if request.method == 'POST':
+        ssid = request.form['ssid']
+        password = request.form['password']
+        set_wifi_credentials(ssid, password)
+        return redirect(url_for('departure_board'))
+    return render_template('setup.html')
+
+def run_flask():
+    app.run(host='0.0.0.0', port=5000)
+
+
+
+# DISPLAY FUNCTIONS:
 def showMetro():
     station_code1, platform1 = settings['station1'], settings['platform1']
     station_code2, platform2 = settings['station2'], settings['platform2']
@@ -680,12 +746,16 @@ def show_board():
             update_event.clear()
 
 
-# Main function
-def main():
-    # Start MQTT thread
-    threading.Thread(target=run_mqtt, daemon=True).start()
-
-    show_board()
 
 if __name__ == '__main__':
-    main()
+    if check_wifi():
+        print("Wi-Fi connected.")
+
+        # Start MQTT thread
+        threading.Thread(target=run_mqtt, daemon=True).start()
+        show_board()
+
+    else:
+        print("No Wi-Fi detected. Creating Access Point.")
+        create_access_point()
+        display_qr_code()
