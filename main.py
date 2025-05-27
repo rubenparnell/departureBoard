@@ -28,7 +28,7 @@ MQTT_TOPIC = os.getenv("MQTT_TOPIC")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
-MODES = ["metro", "weather", "weather_graph", "films", "off"]
+MODES = ["metro", "weather", "weather_graph", "films", "link", "off"]
 current_mode = 0  # Start with "metro"
 
 # Setup button and LED
@@ -693,6 +693,46 @@ def showFilms(scroll_offset=0, page=0):
     return image
 
 
+def showLink():
+    url = f"https://dash.rubenp.com/addBoard/{BOARD_ID}"
+
+    qr = qrcode.QRCode(
+        version=None,  # Let qrcode choose best version automatically
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=1,
+        border=0
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+
+    # Generate the raw (unscaled) QR image
+    qr_img = qr.make_image(fill_color="white", back_color="black").convert('RGB')
+
+    # Determine matrix size
+    width, height = matrix.width, matrix.height
+
+    # Create blank background image (black)
+    background = Image.new('RGB', (width, height), (0, 0, 0))
+
+    # Center the QR code on the background
+    background.paste(qr_img, (0,7))
+
+    draw = ImageDraw.Draw(background)
+
+    draw.text((0, 0), "To change board settings:", font=smallFont, fill=secondaryColour)
+
+    draw.text((34, 6), "Scan QR or visit:", font=smallFont, fill=secondaryColour)
+
+    url = url.replace("https://", "")
+
+    chunks = [url[i:i+15] for i in range(0, len(url), 15)]
+    y = 12
+    for chunk in chunks:
+        draw.text((34, y), chunk, font=smallFont, fill=primaryColour)
+        y += 6
+
+    return background
+
 def show_board():
     global current_mode
 
@@ -701,6 +741,7 @@ def show_board():
     page = 0
 
     while True:
+        matrix.brightness = 100
         mode = MODES[current_mode]
 
         if mode == "metro":
@@ -735,6 +776,13 @@ def show_board():
 
             wait_time = 0.08
 
+        elif mode == "link":
+            matrix.brightness = 75
+            led.on()
+            image = showLink()
+            matrix.SetImage(image)
+            wait_time = 30
+
         elif mode == "off":
             matrix.Clear()
             led.off()
@@ -744,7 +792,6 @@ def show_board():
 
         if update_event.wait(wait_time):
             update_event.clear()
-
 
 
 if __name__ == '__main__':
