@@ -37,7 +37,10 @@ def get_jamjar_films():
                     time = movies[i+1].get_text(strip=True)
                     if "PM" in time:
                         time = time.replace("PM", "").split(":")
-                        time = f"{int(time[0])+12}:{time[1]}"
+                        if int(time[0]) == 12:
+                            time = f"12:{time[1]}"
+                        else:
+                            time = f"{int(time[0])+12}:{time[1]}"
                     elif "AM" in time:
                         time = time.replace("AM", "").split(":")
                         time = f"{int(time[0]):02}:{time[1]}"
