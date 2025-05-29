@@ -87,9 +87,6 @@ rainColour = (33, 227, 253)
 tempColour = (252, 238, 70)
 uvColour = (253, 72, 34)
 
-# Fetch station names
-stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
-
 
 # FUNCTIONS:
 
@@ -143,7 +140,7 @@ def on_connect(client, userdata, flags, rc):
 def on_message(client, userdata, msg):
     global current_mode, force_refresh_messages
     print(f"MQTT message received on topic {msg.topic}")
-    if msg.topic == f"/board/{BOARD_ID}/settings":
+    if msg.topic == f"boards/{BOARD_ID}/settings":
         try:
             payload = json.loads(msg.payload.decode())
             save_settings(
@@ -904,6 +901,9 @@ def show_board():
 if __name__ == '__main__':
     if check_wifi():
         print("Wi-Fi connected.")
+
+        # Fetch station names
+        stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
 
         # Start MQTT thread
         threading.Thread(target=run_mqtt, daemon=True).start()
