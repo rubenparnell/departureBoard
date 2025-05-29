@@ -750,13 +750,14 @@ def showLink():
 
 
 cached_messages = []
+gotMessages = False
 last_msg_fetch_time = 0
 
 def showMessages(page=0, lines_per_page=8):
-    global cached_messages, last_msg_fetch_time, force_refresh_messages
+    global cached_messages, gotMessages, last_msg_fetch_time, force_refresh_messages
 
     now = time.time()
-    if now - last_msg_fetch_time > 120 or not cached_messages or force_refresh_messages:
+    if now - last_msg_fetch_time > 120 or not gotMessages or force_refresh_messages:
         print("Fetching messages from server...")
         try:
             response = requests.get(f"https://dash.rubenp.com/get_messages/{BOARD_ID}")
@@ -764,6 +765,7 @@ def showMessages(page=0, lines_per_page=8):
             cached_messages = messages_data
             last_msg_fetch_time = now
             force_refresh_messages = False
+            gotMessages = True
         except Exception as e:
             print("Error fetching messages:", e)
             messages_data = cached_messages
