@@ -14,22 +14,28 @@ import ssl
 from dotenv import load_dotenv
 import subprocess
 import qrcode
+import warnings
+import textwrap
 from flask import Flask, render_template, request, redirect, url_for
 from get_films import get_jamjar_films
 
-# SETUP VARIABLES
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
+# SETUP VARIABLES
 load_dotenv()  # Load environment variables from .env file
+
+client = None 
+mqtt_connected = threading.Event()
 
 MQTT_BROKER = os.getenv("MQTT_BROKER")
 MQTT_PORT = int(os.getenv("MQTT_PORT"))
 BOARD_ID = os.getenv("BOARD_ID")
-MQTT_TOPIC = os.getenv("MQTT_TOPIC")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
-MODES = ["metro", "weather", "weather_graph", "films", "link", "off"]
-current_mode = 0  # Start with "metro"
+MODES = ["messages", "metro", "weather", "weather_graph", "films", "link", "off"]
+current_mode = 0
+force_refresh_messages = False
 
 # Setup button and LED
 button = Button(21, bounce_time=0.2)  # 200 ms debounce time
@@ -131,11 +137,13 @@ def load_settings():
 
 def on_connect(client, userdata, flags, rc):
     print("Connected to MQTT broker with result code", rc)
-    client.subscribe(MQTT_TOPIC)
+    client.subscribe(f"boards/{BOARD_ID}/#")
+    mqtt_connected.set()
 
 def on_message(client, userdata, msg):
+    global current_mode, force_refresh_messages
     print(f"MQTT message received on topic {msg.topic}")
-    if msg.topic == MQTT_TOPIC:
+    if msg.topic == f"/board/{BOARD_ID}/settings":
         try:
             payload = json.loads(msg.payload.decode())
             save_settings(
@@ -151,7 +159,15 @@ def on_message(client, userdata, msg):
         except Exception as e:
             print("Failed to apply MQTT settings:", e)
 
+    elif msg.topic == f"boards/{BOARD_ID}/message":
+        if MODES[current_mode] == "messages":
+            force_refresh_messages = True
+            update_event.set()
+
+
 def run_mqtt():
+    global client
+
     client = mqtt.Client(client_id=BOARD_ID)
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
@@ -349,7 +365,6 @@ with open("weather_icons.json") as f:
 
 
 def get_icon(code, is_daytime, icon_size):
-    print(f"Fetching icon for code: {code}, is_daytime: {is_daytime}")
     time_of_day = "day" if is_daytime else "night"
     icon_url = weather_icons.get(str(code), {}).get(time_of_day, {}).get("image")
     if not icon_url:
@@ -733,16 +748,88 @@ def showLink():
 
     return background
 
+
+cached_messages = []
+last_msg_fetch_time = 0
+
+def showMessages(page=0, lines_per_page=8):
+    global cached_messages, last_msg_fetch_time, force_refresh_messages
+
+    now = time.time()
+    if now - last_msg_fetch_time > 120 or not cached_messages or force_refresh_messages:
+        print("Fetching messages from server...")
+        try:
+            response = requests.get(f"https://dash.rubenp.com/get_messages/{BOARD_ID}")
+            messages_data = json.loads(response.text)['messages']
+            cached_messages = messages_data
+            last_msg_fetch_time = now
+            force_refresh_messages = False
+        except Exception as e:
+            print("Error fetching messages:", e)
+            messages_data = cached_messages
+    else:
+        print("Using cached messages...")
+        messages_data = cached_messages
+
+    image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    normal_width = 24
+    last_line_width = 21  # reserve 3 characters for "1/2", etc.
+
+    # Step 1: Wrap messages into lines considering word boundaries
+    all_lines = []
+    for message in messages_data:
+        text = message['text']
+        colour = message['colour']
+        max_line_length = last_line_width if (len(all_lines) + 1) % lines_per_page == 0 else normal_width
+        wrapped_lines = textwrap.wrap(text, width=max_line_length)
+        for line in wrapped_lines:
+            all_lines.append((line, colour))
+
+    total_pages = max(1, (len(all_lines) + lines_per_page - 1) // lines_per_page)
+    page = min(page, total_pages - 1)
+
+    start = page * lines_per_page
+    end = start + lines_per_page
+    visible_lines = all_lines[start:end]
+
+    # Step 2: Draw lines
+    y = 0
+    for i, (line, colour) in enumerate(visible_lines):
+        draw.text((0, y), line, font=smallFont, fill=colour)
+        y += 6
+
+    # Step 3: Draw page number in bottom-right corner
+    page_text = f"{page + 1}/{total_pages}"
+    bbox = draw.textbbox((0, 0), page_text, font=smallFont)
+    text_width = bbox[2] - bbox[0]
+
+    draw.text((matrix.width - text_width, matrix.height - 6), page_text, font=smallFont, fill=rainColour)
+
+    return image, page + 1 < total_pages
+
+
 def show_board():
     global current_mode
+    global client
 
     scroll_offset = 0
     page_counter = 0
     page = 0
+    previous_mode = None
 
     while True:
         matrix.brightness = 100
         mode = MODES[current_mode]
+
+        # Publish status if mode has changed
+        if mode != previous_mode:
+            msg = {
+                "mode": mode
+            }
+            client.publish(f"board/{BOARD_ID}/status", json.dumps(msg))
+            previous_mode = mode
 
         if mode == "metro":
             led.on()
@@ -781,7 +868,25 @@ def show_board():
             led.on()
             image = showLink()
             matrix.SetImage(image)
-            wait_time = 30
+            update_event.wait()
+            update_event.clear()
+
+        elif mode == "messages":
+            matrix.brightness = 100
+            led.on()
+            image, has_more = showMessages(page=page)
+            matrix.SetImage(image)
+
+            page_counter += 1
+            if page_counter >= 1:
+                page_counter = 0
+                if has_more:
+                    page += 1
+                else:
+                    page = 0  # back to first page
+
+            wait_time = 15
+
 
         elif mode == "off":
             matrix.Clear()
@@ -800,7 +905,13 @@ if __name__ == '__main__':
 
         # Start MQTT thread
         threading.Thread(target=run_mqtt, daemon=True).start()
-        show_board()
+
+        # Wait for MQTT to connect
+        if mqtt_connected.wait(timeout=10):
+            print("MQTT connected.")
+            show_board()
+        else:
+            print("MQTT connection timeout.")
 
     else:
         print("No Wi-Fi detected. Creating Access Point.")
