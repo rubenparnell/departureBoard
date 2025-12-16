@@ -33,7 +33,7 @@ BOARD_ID = os.getenv("BOARD_ID")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
-MODES = ["messages", "metro", "weather", "weather_graph", "films", "link", "off"]
+MODES = ["clock", "messages", "metro", "weather", "weather_graph", "films", "link", "off"]
 current_mode = 0
 force_refresh_messages = False
 
@@ -74,11 +74,15 @@ options.gpio_slowdown = 2
 options.disable_hardware_pulsing = True
 
 matrix = RGBMatrix(options=options)
-font = ImageFont.truetype("./5x8.bdf", 8)
-font_size = 8
 
-smallFont = ImageFont.truetype("./4x6.bdf", 6)
+font_size = 8
+font = ImageFont.truetype("./5x8.bdf", font_size)
+
 smallFontHeight = 6
+smallFont = ImageFont.truetype("./4x6.bdf", smallFontHeight)
+
+largeFontHeight = 20
+largeFont = ImageFont.truetype("./10x20.bdf", largeFontHeight)
 
 primaryColour = (246, 115, 25)
 secondaryColour = (6, 234, 49)
@@ -808,6 +812,42 @@ def showMessages(page=0, lines_per_page=8):
 
     return image, page + 1 < total_pages
 
+def showClock():
+    now = datetime.now()
+
+    hours = now.strftime("%H")
+    minutes = now.strftime("%M")
+    seconds = now.strftime("%S")
+
+    time_text = f"{hours}:{minutes}:{seconds}"
+    date_text = now.strftime("%a %d %b")
+
+    image = Image.new("RGB", (matrix.width, matrix.height), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    # Centre time
+    time_width = largeFont.getlength(time_text)
+    time_x = (matrix.width - time_width) // 2
+    time_y = (matrix.height // 2) - 10
+
+    draw.text(
+        (time_x, time_y),
+        time_text,
+        font=largeFont,
+        fill=primaryColour
+    )
+
+    # Centre date underneath
+    date_width = smallFont.getlength(date_text)
+    date_x = (matrix.width - date_width) // 2
+    draw.text(
+        (date_x, time_y + 18),
+        date_text,
+        font=smallFont,
+        fill=(3, 9, 182)
+    )
+
+    return image
 
 def show_board():
     global current_mode
@@ -886,6 +926,12 @@ def show_board():
 
             wait_time = 15
 
+        elif mode == "clock":
+            matrix.brightness = 80
+            led.on()
+            image = showClock()
+            matrix.SetImage(image)
+            wait_time = 1
 
         elif mode == "off":
             matrix.Clear()
