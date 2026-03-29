@@ -2,6 +2,8 @@ import os
 import json
 import threading
 import requests
+from playwright.sync_api import sync_playwright
+import time
 from PIL import Image, ImageDraw, ImageFont
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
 from signal import pause
@@ -210,11 +212,64 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
     update_event.set()  # Notify display thread of changes
 
 def get_trains(station, platform):
+    train_list = []
     try:
-        response = requests.get(f"https://metro-rti.nexus.org.uk/api/times/{station}/{platform}")
-        return json.loads(response.text)[:2]
-    except:
+        with sync_playwright() as p:
+            # Running in headless mode for the LED matrix (Linux)
+            browser = p.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium-browser"  # Path to the Pi's native Chromium
+            )
+            page = browser.new_page()
+            
+            # 1. Load the page
+            page.goto("https://metro-rti-app.nexus.org.uk/", wait_until="networkidle")
+
+            # 2. Select Station
+            page.wait_for_selector("#stationSelect")
+            page.select_option("#stationSelect", value=station)
+            page.eval_on_selector("#stationSelect", "el => el.dispatchEvent(new Event('change', { bubbles: true }))")
+
+            # 3. Wait for and Select Platform
+            platform_selector = f"#platformSelect option[value='{platform}']"
+            page.wait_for_selector(platform_selector, timeout=10000)
+            page.select_option("#platformSelect", value=str(platform))
+            page.eval_on_selector("#platformSelect", "el => el.dispatchEvent(new Event('change', { bubbles: true }))")
+
+            # 4. Click Search and Wait for Table
+            page.wait_for_function("!document.querySelector('#searchButton').disabled")
+            page.click("#searchButton")
+            
+            # 5. Parse Table (wait for results)
+            page.wait_for_selector("#rti_results_table td", timeout=5000)
+            rows = page.query_selector_all("#rti_results_table tr")
+
+            for row in rows:
+                cells = row.query_selector_all("td")
+                if len(cells) >= 2:
+                    # Example text: "South Hylton" and "5 mins"
+                    dest = cells[0].inner_text().strip()
+                    due_text = cells[1].inner_text().strip().lower()
+                    
+                    # Convert "5 mins" or "Due" to the integer format your code expects
+                    if "due" in due_text:
+                        due_val = 0
+                    else:
+                        # Extracts the number from "5 mins"
+                        due_val = int(''.join(filter(str.isdigit, due_text)) or 0)
+                    
+                    train_list.append({
+                        'destination': dest,
+                        'dueIn': due_val
+                    })
+
+            browser.close()
+            # Return top 2 to match your original slice [:2]
+            return train_list[:2]
+    except Exception as e:
+        print(f"Scrape error: {e}")
         return []
+
 
 def convertStationCode(code):
     return stations.get(code, "Unknown")
@@ -944,12 +999,43 @@ def show_board():
             update_event.clear()
 
 
+def fetch_stations():
+    url = "https://metro-rti.nexus.org.uk/api/stations"
+    try:
+        res = requests.get(url, timeout=5, headers={
+            "User-Agent": "Mozilla/5.0"
+        })
+
+        res.raise_for_status()  # catches 4xx/5xx
+
+        # Try parsing JSON safely
+        data = res.json()
+
+        if not data:
+            print("Stations API returned empty data")
+            return {}
+
+        return data
+
+    except requests.exceptions.RequestException as e:
+        print("Network error fetching stations:", e)
+
+    except json.JSONDecodeError as e:
+        print("Invalid JSON from stations API:", e)
+        print("Response was:", res.text[:200])
+
+    except Exception as e:
+        print("Unexpected error fetching stations:", e)
+
+    return {}  # fallback
+
+
 if __name__ == '__main__':
     if check_wifi():
         print("Wi-Fi connected.")
 
         # Fetch station names
-        stations = json.loads(requests.get("https://metro-rti.nexus.org.uk/api/stations").text)
+        stations = fetch_stations()
 
         # Start MQTT thread
         threading.Thread(target=run_mqtt, daemon=True).start()
