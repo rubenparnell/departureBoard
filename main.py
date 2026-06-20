@@ -35,6 +35,14 @@ BOARD_ID = os.getenv("BOARD_ID")
 MQTT_USERNAME = os.getenv("MQTT_USERNAME")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
 
+TOKEN_URL = "https://ken.nebulalabs.cc/realtime/token/"
+TOKEN_TTL = 240  # safer than 300
+
+_token_cache = None
+_token_time = 0
+
+stations = {}
+
 MODES = ["clock", "messages", "metro", "weather", "weather_graph", "films", "link", "off"]
 current_mode = 0
 force_refresh_messages = False
@@ -163,15 +171,14 @@ def on_message(client, userdata, msg):
             print("Failed to apply MQTT settings:", e)
 
     elif msg.topic == f"boards/{BOARD_ID}/message":
-        if MODES[current_mode] == "messages":
-            force_refresh_messages = True
-            update_event.set()
+        force_refresh_messages = True
+        update_event.set()
 
 
 def run_mqtt():
     global client
 
-    client = mqtt.Client(client_id=BOARD_ID)
+    client = mqtt.Client(client_id=BOARD_ID, callback_api_version=mqtt.CallbackAPIVersion.VERSION1)
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     client.on_connect = on_connect
     client.on_message = on_message
@@ -212,68 +219,27 @@ def save_settings(station1, platform1, station2, platform2, lat, lon, forecast_h
     update_event.set()  # Notify display thread of changes
 
 def get_trains(station, platform):
-    train_list = []
-    try:
-        with sync_playwright() as p:
-            # Running in headless mode for the LED matrix (Linux)
-            browser = p.chromium.launch(
-                headless=True,
-                executable_path="/usr/bin/chromium-browser"  # Path to the Pi's native Chromium
-            )
-            page = browser.new_page()
-            
-            # 1. Load the page
-            page.goto("https://metro-rti-app.nexus.org.uk/", wait_until="networkidle")
-
-            # 2. Select Station
-            page.wait_for_selector("#stationSelect")
-            page.select_option("#stationSelect", value=station)
-            page.eval_on_selector("#stationSelect", "el => el.dispatchEvent(new Event('change', { bubbles: true }))")
-
-            # 3. Wait for and Select Platform
-            platform_selector = f"#platformSelect option[value='{platform}']"
-            page.wait_for_selector(platform_selector, timeout=10000)
-            page.select_option("#platformSelect", value=str(platform))
-            page.eval_on_selector("#platformSelect", "el => el.dispatchEvent(new Event('change', { bubbles: true }))")
-
-            # 4. Click Search and Wait for Table
-            page.wait_for_function("!document.querySelector('#searchButton').disabled")
-            page.click("#searchButton")
-            
-            # 5. Parse Table (wait for results)
-            page.wait_for_selector("#rti_results_table td", timeout=5000)
-            rows = page.query_selector_all("#rti_results_table tr")
-
-            for row in rows:
-                cells = row.query_selector_all("td")
-                if len(cells) >= 2:
-                    # Example text: "South Hylton" and "5 mins"
-                    dest = cells[0].inner_text().strip()
-                    due_text = cells[1].inner_text().strip().lower()
-                    
-                    # Convert "5 mins" or "Due" to the integer format your code expects
-                    if "due" in due_text:
-                        due_val = 0
-                    else:
-                        # Extracts the number from "5 mins"
-                        due_val = int(''.join(filter(str.isdigit, due_text)) or 0)
-                    
-                    train_list.append({
-                        'destination': dest,
-                        'dueIn': due_val
-                    })
-
-            browser.close()
-            # Return top 2 to match your original slice [:2]
-            return train_list[:2]
-    except Exception as e:
-        print(f"Scrape error: {e}")
+    token = get_token()
+    if not token:
+        print("No token available for get_trains")
         return []
 
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Origin": "https://metro-rti.nexus.org.uk",
+        "Referer": "https://metro-rti.nexus.org.uk/"
+    }
+
+    data = safe_get(f"https://metro-rti.nexus.org.uk/api/times/{station}/{platform}", headers=headers)
+
+    if not isinstance(data, list):
+        return []
+
+    return data[:2]
 
 def convertStationCode(code):
     return stations.get(code, "Unknown")
-
 
 def cycle_mode():
     global current_mode
@@ -283,7 +249,6 @@ def cycle_mode():
 
 # Button setup to toggle screen on/off
 button.when_pressed = cycle_mode
-
 
 
 # FLASK WEB APP FOR WIFI SETUP:
@@ -300,7 +265,6 @@ def setup_wifi():
 
 def run_flask():
     app.run(host='0.0.0.0', port=5000)
-
 
 
 # DISPLAY FUNCTIONS:
@@ -999,36 +963,70 @@ def show_board():
             update_event.clear()
 
 
-def fetch_stations():
-    url = "https://metro-rti.nexus.org.uk/api/stations"
+def get_token():
+    global _token_cache, _token_time
+
+    now = time.time()
+
+    if _token_cache and (now - _token_time) < TOKEN_TTL:
+        return _token_cache
+
     try:
-        res = requests.get(url, timeout=5, headers={
-            "User-Agent": "Mozilla/5.0"
-        })
+        r = requests.get(TOKEN_URL, timeout=5)
+        r.raise_for_status()
 
-        res.raise_for_status()  # catches 4xx/5xx
+        # token may be JSON OR plain text
+        try:
+            _token_cache = r.json().get("token")
+        except Exception:
+            _token_cache = r.text.strip()
 
-        # Try parsing JSON safely
-        data = res.json()
+        _token_time = now
 
-        if not data:
-            print("Stations API returned empty data")
-            return {}
+        if not _token_cache:
+            print("WARNING: empty token received")
 
-        return data
-
-    except requests.exceptions.RequestException as e:
-        print("Network error fetching stations:", e)
-
-    except json.JSONDecodeError as e:
-        print("Invalid JSON from stations API:", e)
-        print("Response was:", res.text[:200])
+        return _token_cache
 
     except Exception as e:
-        print("Unexpected error fetching stations:", e)
+        print("Token fetch failed:", e)
+        return _token_cache  # fallback if exists
 
-    return {}  # fallback
 
+def safe_get(url, headers=None):
+    try:
+        res = requests.get(url, headers=headers, timeout=5)
+        res.raise_for_status()
+        try:
+            return res.json()
+        except Exception:
+            print("API returned non-JSON response:", res.text[:200])
+            return None
+    except Exception as e:
+        print("API failed:", e)
+        return None
+    
+
+def fetch_stations():
+    token = get_token()
+    if not token:
+        print("No token available")
+        return {}
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Origin": "https://metro-rti.nexus.org.uk",
+        "Referer": "https://metro-rti.nexus.org.uk/"
+    }
+
+    data = safe_get("https://metro-rti.nexus.org.uk/api/stations", headers=headers)
+
+    if not data:
+        print("Stations API returned empty data")
+        return {}
+
+    return data
 
 if __name__ == '__main__':
     if check_wifi():
