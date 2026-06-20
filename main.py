@@ -21,6 +21,8 @@ import textwrap
 from flask import Flask, render_template, request, redirect, url_for
 from get_films import get_jamjar_films
 
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # SETUP VARIABLES
